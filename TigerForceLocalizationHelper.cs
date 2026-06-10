@@ -145,7 +145,13 @@ public static class TigerForceLocalizationHelper {
         var types = AssemblyManager.GetModAssemblies(modName)
             .SelectMany(AssemblyManager.GetLoadableTypes)
             .Where(ShouldJITRecursive)
-            .Where(t => !t.ContainsGenericParameters);
+            .Where(t =>
+            // 此规则取自 DynamicMethod.Init(..), 其中 IsInterface 会在接口有默认实现时出现
+                !t.HasElementType
+                && !t.ContainsGenericParameters
+                && !t.IsGenericParameter
+                && !t.IsInterface
+            );
         if (typeFilter != null)
             types = types.Where(typeFilter.Filter);
         var methodFilter = filters?.MethodFilter;
