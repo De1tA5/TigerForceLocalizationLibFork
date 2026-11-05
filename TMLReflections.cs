@@ -11,11 +11,16 @@ using System.Collections.Generic;
 
 namespace TigerForceLocalizationLib;
 
+//缓存所有反射内容，减少开销
 internal static class TMLReflections {
+    //全部
     public const BindingFlags BFALL = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
+    //静态类
     public const BindingFlags BFS = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+    //实例
     public const BindingFlags BFI = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
     public static Assembly MainAssembly { get; } = typeof(TMLMain).Assembly;
+
     #region Terraria.Localization
     public static class Language {
         public static Type Type { get; } = typeof(TMLLanguage);
@@ -37,6 +42,7 @@ internal static class TMLReflections {
         public static Dictionary<string, TMLLocalizedText> LocalizedText { get; } = (Dictionary<string, TMLLocalizedText>)LocalizedTextField.GetValue(TMLLanguageManager.Instance)!;
     }
     #endregion
+
     #region Terraria.ModLoader
     public class LocalizationLoader {
         public static Type Type { get; } = typeof(TMLLocalizationLoader);
@@ -49,6 +55,7 @@ internal static class TMLReflections {
         public static MethodInfo LoadMethod { get; } = Type.GetMethod("Load", BFS)!;
     }
     #endregion
+
     #region Terraria.ModLoader.UI
     public static class Interface {
         public static Type Type { get; } = MainAssembly.GetType("Terraria.ModLoader.UI.Interface")!;

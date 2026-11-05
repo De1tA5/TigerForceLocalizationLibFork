@@ -13,18 +13,21 @@ namespace TigerForceLocalizationLib.Filters;
 /// 用以筛选<see cref="ILCursor"/>
 /// </summary>
 /// <inheritdoc/>
-public class ILCursorFilter(Func<ILCursor, bool> filter) : FilterBase<ILCursor>(filter) {
+public class ILCursorFilter(Func<ILCursor, bool> filter) : FilterBase<ILCursor>(filter) 
+{
     #region 运算符重载
     /// <summary>
     /// 两个筛选规则满足其一即可
     /// </summary>
-    public static ILCursorFilter operator |(ILCursorFilter left, ILCursorFilter right) {
+    public static ILCursorFilter operator |(ILCursorFilter left, ILCursorFilter right) 
+    {
         return new(cursor => left.Filter(cursor) || right.Filter(cursor));
     }
     /// <summary>
     /// 两个筛选规则需同时满足
     /// </summary>
-    public static ILCursorFilter operator &(ILCursorFilter left, ILCursorFilter right) {
+    public static ILCursorFilter operator &(ILCursorFilter left, ILCursorFilter right) 
+    {
         return new(cursor => left.Filter(cursor) && right.Filter(cursor));
     }
     /// <summary>
@@ -40,6 +43,7 @@ public class ILCursorFilter(Func<ILCursor, bool> filter) : FilterBase<ILCursor>(
     /// </summary>
     public static ILCursorFilter MatchAny(params ILCursorFilter[] filters) => new(cursor => filters.Any(f => f.Filter(cursor)));
     #endregion
+
     #region 常用
     /// <summary>
     /// 忽略在 Language.Xxx 方法中的字符串
@@ -56,14 +60,18 @@ public class ILCursorFilter(Func<ILCursor, bool> filter) : FilterBase<ILCursor>(
     /// <summary>
     /// 忽略通常的调用本地化相关的字符串
     /// </summary>
-    public static ILCursorFilter NoCommonLanguageMethods => new(cursor => {
+    public static ILCursorFilter NoCommonLanguageMethods => new(cursor => 
+    {
         var methodReference = FindMethodUsage(cursor);
         if (methodReference == null)
             return true;
+
         if (methodReference.DeclaringType.Is(typeof(Language)))
             return false;
+
         if (methodReference.DeclaringType.Is(typeof(LanguageManager)))
             return false;
+
         return true;
     });
     private readonly static HashSet<string> CommonFilteredTypeFullNames = [
@@ -378,11 +386,14 @@ public class ILCursorFilter(Func<ILCursor, bool> filter) : FilterBase<ILCursor>(
 
     // TODO: 筛选字典取键 ("get_Item")
     #endregion
+
     #region 辅助方法
     private static int PushCount(OpCode code) => PushCount(code.StackBehaviourPush);
     private static int PopCount(OpCode code) => -PushCount(code.StackBehaviourPop);
-    private static int PushCount(StackBehaviour behaviour) {
-        return behaviour switch {
+    private static int PushCount(StackBehaviour behaviour) 
+    {
+        return behaviour switch 
+        {
             StackBehaviour.Pop0 => 0,
             StackBehaviour.Pop1 => -1,
             StackBehaviour.Pop1_pop1 => -2,
@@ -415,30 +426,35 @@ public class ILCursorFilter(Func<ILCursor, bool> filter) : FilterBase<ILCursor>(
             _ => 0,
         };
     }
-    private static MethodReference? FindMethodUsage(ILCursor cursor) {
+    private static MethodReference? FindMethodUsage(ILCursor cursor) 
+    {
         var ins = cursor.Next;
         if (ins == null)
             return null;
         int stack = 1;
-        for (ins = ins.Next; ins != null; ins = ins.Next) {
+        for (ins = ins.Next; ins != null; ins = ins.Next) 
+        {
             // TODO?: 跳转处理
             if (ins.OpCode.FlowControl != FlowControl.Next && ins.OpCode.FlowControl != FlowControl.Call)
                 return null;
-            if (ins.MatchCallOrCallvirt(out var methodReference) || ins.MatchNewobj(out methodReference)) {
+            if (ins.MatchCallOrCallvirt(out var methodReference) || ins.MatchNewobj(out methodReference)) 
+            {
                 stack -= !methodReference.HasParameters ? 0 : methodReference.Parameters.Count;
                 if (stack <= 0)
                     return methodReference;
                 if (methodReference.ReturnType != null)
                     stack += 1;
             }
-            else if (ins.MatchCalli(out var methodSignature)) {
+            else if (ins.MatchCalli(out var methodSignature)) 
+            {
                 stack -= !methodSignature.HasParameters ? 0 : methodSignature.Parameters.Count;
                 if (stack <= 0)
                     return null;
                 if (methodSignature.ReturnType != null)
                     stack += 1;
             }
-            else {
+            else 
+            {
                 stack -= PopCount(ins.OpCode);
                 if (stack <= 0)
                     return null;

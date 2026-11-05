@@ -35,6 +35,7 @@ public class TypeFilter(Func<Type, bool> filter) : FilterBase<Type>(filter) {
     /// </summary>
     public static TypeFilter MatchAny(params TypeFilter[] filters) => new(type => filters.Any(f => f.Filter(type)));
     #endregion
+
     #region 常用筛选规则
     #region 匹配 FullName
     /// <summary>

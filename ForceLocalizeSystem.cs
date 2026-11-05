@@ -21,12 +21,16 @@ namespace TigerForceLocalizationLib;
 /// <typeparam name="TSelf">继承了此类的类自己</typeparam>
 public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSystem<TSelf> {
     #region Instance
-    private static TSelf InitializeFunction() {
+    private static TSelf InitializeFunction() 
+    {
         var selfType = typeof(TSelf);
         var customInitializeFunctionField = selfType.GetField("CustomInitializeFunction", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-        if (customInitializeFunctionField != null && customInitializeFunctionField.FieldType == typeof(CustomInitializeFunctionDelegate)) {
+
+        if (customInitializeFunctionField != null && customInitializeFunctionField.FieldType == typeof(CustomInitializeFunctionDelegate)) 
+        {
             var customInitializeFunction = (CustomInitializeFunctionDelegate?)customInitializeFunctionField.GetValue(null);
-            if (customInitializeFunction != null) {
+            if (customInitializeFunction != null) 
+            {
                 return customInitializeFunction();
             }
         }
@@ -43,6 +47,7 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
     /// </summary>
     protected static TSelf Instance { get => _instance ??= InitializeFunction(); }
     #endregion
+
     #region Localize
     /// <summary>
     /// <br/>替换一个方法中的字符串
@@ -54,24 +59,33 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
     /// </summary>
     /// <param name="methodBase">此方法, 由反射得到</param>
     /// <param name="localizations">需要替换的字符串, 键为替换前, 值为替换后</param>
-    public static void Localize(MethodBase? methodBase, Dictionary<string, string> localizations) {
-        if (methodBase == null) {
+    public static void Localize(MethodBase? methodBase, Dictionary<string, string> localizations) 
+    {
+        if (methodBase == null) 
+        {
             LogError("Method Null!\n" + new StackTrace());
             return;
         }
-        if (localizations.Count == 0) {
+
+        if (localizations.Count == 0) 
+        {
             return;
         }
-        MonoModHooks.Modify(methodBase, il => {
+
+        MonoModHooks.Modify(methodBase, il => 
+        {
             ILCursor cursor = new(il);
             string? str = null;
-            while (cursor.TryGotoNext(i => i.MatchLdstr(out str))) {
-                if (str != null && cursor.Next != null && localizations.TryGetValue(str, out var value)) {
+            while (cursor.TryGotoNext(i => i.MatchLdstr(out str))) 
+            {
+                if (str != null && cursor.Next != null && localizations.TryGetValue(str, out var value)) 
+                {
                     Instance.ReplaceString_IL(cursor, str, value);
                 }
             }
         });
     }
+
     /// <summary>
     /// <br/>替换一个方法中的字符串
     /// <br/>只能在加载阶段使用
@@ -80,35 +94,44 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
     /// <param name="methodName">此方法名</param>
     /// <inheritdoc cref="Localize"/>
     /// <param name="localizations"></param>
-    public static void LocalizeByType(Type type, string methodName, Dictionary<string, string> localizations) {
+    public static void LocalizeByType(Type type, string methodName, Dictionary<string, string> localizations) 
+    {
         MethodInfo? methodInfo;
-        try {
+        try 
+        {
             methodInfo = type.GetMethod(methodName, BFALL);
         }
-        catch (Exception e) {
+        catch (Exception e) 
+        {
             LogError("Localize error", e);
             return;
         }
-        if (methodInfo == null) {
+        if (methodInfo == null) 
+        {
             LogErrorFormat("Can't find method {0} in type {1}", methodInfo, type);
             return;
         }
         Localize(methodInfo, localizations);
     }
+
     /// <param name="typeName">包含此方法的类型的名字, 注意此类型必须在需汉化的模组中</param>
     /// <param name="methodName">此方法名</param>
     /// <inheritdoc cref="LocalizeByType"/>
     /// <param name="localizations"></param>
-    public static void LocalizeByTypeName(string typeName, string methodName, Dictionary<string, string> localizations) {
-        if (!TypeHelper.TypeByName.TryGetValue(typeName, out Type? type)) {
+    public static void LocalizeByTypeName(string typeName, string methodName, Dictionary<string, string> localizations) 
+    {
+        if (!TypeHelper.TypeByName.TryGetValue(typeName, out Type? type)) 
+        {
             LogErrorFormat("Can't find type by name: {0}", typeName);
             return;
         }
-        if (TypeHelper.DuplicatedNames.Contains(typeName)) {
+        if (TypeHelper.DuplicatedNames.Contains(typeName)) 
+        {
             LogWarnFormat("Type duplicated: {0}", typeName);
         }
         LocalizeByType(type, methodName, localizations);
     }
+
     /// <param name="typeFullName">
     /// <br/>包含此方法的类型的全名, 注意此类型必须在需汉化的模组中
     /// <br/>包含命名空间, 由 '.' 分隔
@@ -298,14 +321,17 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
     /// <param name="cursor">IL 指针, 它指向的语句为 ldstr <paramref name="old"/> (如果要插入语句的话需先调用 <see cref="ILCursor.MoveAfterLabels()"/>)</param>
     /// <param name="old">原字符串</param>
     /// <param name="new">通过 Localize 系方法转入的新字符串</param>
-    protected virtual void ReplaceString_IL(ILCursor cursor, string old, string @new) {
+    protected virtual void ReplaceString_IL(ILCursor cursor, string old, string @new) 
+    {
         string replaced = ReplaceString(old, @new);
         cursor.Next!.Operand = replaced;
     }
+
     /// <summary>
     /// 要汉化的模组的名字
     /// </summary>
     protected abstract string ModName { get; }
+
     #region Log
     /// <summary>
     /// 是否报告错误和警告
@@ -327,58 +353,76 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
     //     }
     // }
     [Conditional(LogConditionalString)]
-    private static void LogWarnFormat(string message, object? arg0) {
-        if (Instance.NeedLog) {
+    private static void LogWarnFormat(string message, object? arg0) 
+    {
+        if (Instance.NeedLog) 
+        {
             Instance.Logger.WarnFormat(message, arg0);
         }
     }
     [Conditional(LogConditionalString)]
-    private static void LogError(object message) {
-        if (Instance.NeedLog) {
+    private static void LogError(object message) 
+    {
+        if (Instance.NeedLog) 
+        {
             Instance.Logger.Error(message);
         }
-        if (Instance.ThrowException) {
+
+        if (Instance.ThrowException) 
+        {
             throw new Exception("Localize error!");
         }
     }
     [Conditional(LogConditionalString)]
-    private static void LogError(object message, Exception exception) {
-        if (Instance.NeedLog) {
+    private static void LogError(object message, Exception exception) 
+    {
+        if (Instance.NeedLog) 
+        {
             Instance.Logger.Error(message, exception);
         }
-        if (Instance.ThrowException) {
+
+        if (Instance.ThrowException) 
+        {
             throw new Exception("Localize error!");
         }
     }
     [Conditional(LogConditionalString)]
-    private static void LogErrorFormat(string message, object? arg0) {
-        if (Instance.NeedLog) {
+    private static void LogErrorFormat(string message, object? arg0) 
+    {
+        if (Instance.NeedLog) 
+        {
             Instance.Logger.ErrorFormat(message, arg0);
         }
-        if (Instance.ThrowException) {
+
+        if (Instance.ThrowException) 
+        {
             throw new Exception("Localize error!");
         }
     }
     [Conditional(LogConditionalString)]
-    private static void LogErrorFormat(string message, object? arg0, object? arg1) {
-        if (Instance.NeedLog) {
+    private static void LogErrorFormat(string message, object? arg0, object? arg1) 
+    {
+        if (Instance.NeedLog) 
+        {
             Instance.Logger.ErrorFormat(message, arg0, arg1);
         }
-        if (Instance.ThrowException) {
+
+        if (Instance.ThrowException) 
+        {
             throw new Exception("Localize error!");
         }
     }
     #endregion
 
-    static ForceLocalizeSystem() {
+    static ForceLocalizeSystem() 
+    {
         Hook? postSetupRecipesHook = null;
-        postSetupRecipesHook = new(typeof(SystemLoader).GetMethod("PostSetupRecipes", BFALL) ?? throw new NullReferenceException("Can't find SystemLoader.PostSetupRecipes"), (Action<Mod> orig, Mod mod) => {
+        postSetupRecipesHook = new(typeof(SystemLoader).GetMethod("PostSetupRecipes", BFALL) ?? throw new NullReferenceException("Can't find SystemLoader.PostSetupRecipes"), (Action<Mod> orig, Mod mod) => 
+        {
             orig(mod);
             TypeHelper.Clear();
-            if (postSetupRecipesHook != null) {
-                postSetupRecipesHook.Dispose(); // 包含 Undo
-                postSetupRecipesHook = null;
-            }
+            postSetupRecipesHook?.Dispose(); // 包含 Undo
+            postSetupRecipesHook = null;
         });
     }
 
@@ -391,9 +435,12 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
         /// <summary>
         /// 模组的程序集
         /// </summary>
-        public static Assembly ModAssembly {
-            get {
-                if (modAssembly == null) {
+        public static Assembly ModAssembly 
+        {
+            get 
+            {
+                if (modAssembly == null) 
+                {
                     Initialize();
                 }
                 return modAssembly;
@@ -403,7 +450,8 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
         /// <summary>
         /// 通过 Type.Name 为键构造的字典
         /// </summary>
-        public static Dictionary<string, Type> TypeByName {
+        public static Dictionary<string, Type> TypeByName 
+        {
             get {
                 if (typesByName == null) {
                     Initialize();
@@ -415,7 +463,8 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
         /// <summary>
         /// 在 <see cref="TypeByName"/> 中有重复的键
         /// </summary>
-        public static HashSet<string> DuplicatedNames {
+        public static HashSet<string> DuplicatedNames 
+        {
             get {
                 if (duplicatedNames == null) {
                     Initialize();
@@ -427,7 +476,8 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
         /// <summary>
         /// 通过 <see cref="Type.FullName"/> 为键构造的字典
         /// </summary>
-        public static Dictionary<string, Type> TypeByFullName {
+        public static Dictionary<string, Type> TypeByFullName 
+        {
             get {
                 if (typeByFullName == null) {
                     Initialize();
@@ -437,14 +487,18 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
         }
         private static bool initialized;
         [MemberNotNull(nameof(modAssembly), nameof(typesByName), nameof(typeByFullName), nameof(duplicatedNames))]
-        private static void Initialize() {
+        private static void Initialize() 
+        {
             if (cleared) {
                 throw new Exception("在完成后初始化!");
             }
+
             if (initialized) {
                 throw new Exception("重复初始化!");
             }
-            if (!ModLoader.TryGetMod(Instance.ModName, out Mod mod)) {
+
+            if (!ModLoader.TryGetMod(Instance.ModName, out Mod mod)) 
+            {
                 throw new Exception($"模组 \"{Instance.ModName}\" 未找到!");
             }
             initialized = true;
@@ -452,7 +506,8 @@ public abstract class ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSyst
             typesByName = [];
             typeByFullName = [];
             duplicatedNames = [];
-            foreach (Type type in AssemblyManager.GetLoadableTypes(modAssembly)) {
+            foreach (Type type in AssemblyManager.GetLoadableTypes(modAssembly)) 
+            {
                 if (!typesByName.TryAdd(type.Name, type)) {
                     duplicatedNames.Add(type.Name);
                 }
@@ -499,9 +554,11 @@ public sealed class ForceLocalizeSystemImpl<TMod> : ForceLocalizeSystemByMod<TMo
 /// <br/>使用 Localize 系方法时传入的新字符串默认应是 hjson 中的键
 /// </summary>
 /// <inheritdoc cref="ForceLocalizeSystem{TSelf}"/>
-public abstract class ForceLocalizeSystemByLocalizeText<TSelf> : ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSystemByLocalizeText<TSelf> {
+public abstract class ForceLocalizeSystemByLocalizeText<TSelf> : ForceLocalizeSystem<TSelf> where TSelf : ForceLocalizeSystemByLocalizeText<TSelf> 
+{
     /// <inheritdoc/>
-    protected override void ReplaceString_IL(ILCursor cursor, string old, string @new) {
+    protected override void ReplaceString_IL(ILCursor cursor, string old, string @new) 
+    {
         Language.GetOrRegister(@new, () => old);
         cursor.MoveAfterLabels();
         cursor.EmitLdstr(@new);
@@ -517,7 +574,8 @@ public abstract class ForceLocalizeSystemByLocalizeText<TSelf> : ForceLocalizeSy
 /// <br/>使用 Localize 系方法时传入的新字符串默认应是 hjson 中的键
 /// </summary>
 /// <inheritdoc cref="ForceLocalizeSystemImpl{TMod}"/>
-public abstract class ForceLocalizeSystemByLocalizeText<TMod, TSelf> : ForceLocalizeSystemByLocalizeText<TSelf> where TMod : Mod where TSelf : ForceLocalizeSystemByLocalizeText<TMod, TSelf> {
+public abstract class ForceLocalizeSystemByLocalizeText<TMod, TSelf> : ForceLocalizeSystemByLocalizeText<TSelf> where TMod : Mod where TSelf : ForceLocalizeSystemByLocalizeText<TMod, TSelf> 
+{
     private readonly string modName = typeof(TMod).Name;
     /// <inheritdoc/>
     protected override string ModName => modName;

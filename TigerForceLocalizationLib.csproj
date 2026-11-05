@@ -5,7 +5,8 @@
 
 	<!-- General -->
 	<PropertyGroup>
-    <Nullable>enable</Nullable>
+	<!-- 关闭警告（我不想打 ! 了） -->
+    <Nullable>annotations</Nullable>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
 	</PropertyGroup>
 
