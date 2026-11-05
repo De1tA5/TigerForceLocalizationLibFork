@@ -15,6 +15,8 @@ using TypeFilter = TigerForceLocalizationLib.Filters.TypeFilter;
 
 namespace TigerForceLocalizationLib;
 
+//TODO - json外部配置文件控制，不再通过代码来直接调用API
+
 /// <summary>
 /// 用以辅助本地化的一些方法
 /// </summary>
@@ -151,6 +153,7 @@ public static class TigerForceLocalizationHelper
             }
         }
         var jitFilter = mod.PreJITFilter;
+
         localizationRoot ??= $"Mods.{selfModName}.ForceLocalizations";
 
         #region 处理 filters
