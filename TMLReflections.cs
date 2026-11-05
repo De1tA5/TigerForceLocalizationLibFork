@@ -12,6 +12,7 @@ using System.Collections.Generic;
 namespace TigerForceLocalizationLib;
 
 //缓存所有反射内容，减少开销
+//TODO - 1.4.5 可能存在修改，需及时更新
 internal static class TMLReflections {
     //全部
     public const BindingFlags BFALL = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
