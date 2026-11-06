@@ -2,4 +2,4 @@ displayName = Tiger's Force Localization Lib
 author = Tigerzzz
 version = 0.3.2
 includeSource = true
-buildIgnore = *.csproj, *.user, obj\*, bin\*, .vs\*, .git\*, .*, Properties\*
+buildIgnore = *.csproj, *.user, obj\*, bin\*, .vs\*, .git\*, .*, Properties\* , Temp\*

@@ -55,30 +55,43 @@ public static class TigerForceLocalizationHelper
     public static bool ForceAllWeakReferences {
         get => hookForNotAllWeakReferences == null;
         set {
-            if (value) {
-                if (hookForNotAllWeakReferences == null) {
+            if (value) 
+            {
+                if (hookForNotAllWeakReferences == null) 
+                {
                     return;
                 }
                 hookForNotAllWeakReferences?.Dispose();
                 hookForNotAllWeakReferences = null;
                 return;
             }
-            if (hookForNotAllWeakReferences != null) {
+
+            if (hookForNotAllWeakReferences != null) 
+            {
                 return;
             }
+            //false 后跳过该模组
             hookForNotAllWeakReferences = new(TMLReflections.LocalizationLoader.UpdateLocalizationFilesForModMethod, IL_NotAllWeakReferences);
         }
     }
 
     private static ILHook? hookForNotAllWeakReferences;
+
+    //某个模组没有加载时，不再直接退出整个本地化文件更新方法
+    //而是跳过这个模组，继续处理其他模组
     private static void IL_NotAllWeakReferences(ILContext il) 
     {
         ILCursor cursor = new(il);
         if (!cursor.TryGotoNext(i => i.MatchLdloc(13), // otherMod
             i => i.MatchBrtrue(out _),
-            i => i.MatchLeave(out _))) { // if (otherMod == null) return;
+            i => i.MatchLeave(out _))) 
+        {
+            //匹配对应代码段落为 if (otherMod == null) return;
             return;
         }
+
+        //抵达前面修改 return -> continue
+        //cursor2 用于实际修改
         cursor.Next = cursor.Next.Next.Next;
         ILCursor cursor2 = new(cursor);
 
@@ -152,52 +165,78 @@ public static class TigerForceLocalizationHelper
                     """);
             }
         }
+        //
         var jitFilter = mod.PreJITFilter;
 
+        //本地化文件名称
         localizationRoot ??= $"Mods.{selfModName}.ForceLocalizations";
 
         #region 处理 filters
 
         var typeFilter = filters?.TypeFilter;
-        bool ShouldJITRecursive(Type type) => jitFilter.ShouldJIT(type) && (type.DeclaringType is null || ShouldJITRecursive(type.DeclaringType));
 
+        //递归 检查该模组Type及其所有外层嵌套声明类型是否允许预 JIT 编译的局部函数
+        bool ShouldJITRecursive(Type type) => 
+            jitFilter.ShouldJIT(type) && (type.DeclaringType is null || ShouldJITRecursive(type.DeclaringType));
+
+        //程序集获取，包括可加载类型
         var types = AssemblyManager.GetModAssemblies(modName)
             .SelectMany(AssemblyManager.GetLoadableTypes)
-            .Where(ShouldJITRecursive)
+            .Where(ShouldJITRecursive)//过滤有JIT的
             .Where(t =>
             // 此规则取自 DynamicMethod.Init(..), 其中 IsInterface 会在接口有默认实现时出现
-                !t.HasElementType
-                && !t.ContainsGenericParameters
-                && !t.IsGenericParameter
-                && !t.IsInterface
+                !t.HasElementType //数组、指针、ByRef 等元素类型构造
+                && !t.ContainsGenericParameters //包含未确定泛型参数的类型
+                && !t.IsGenericParameter //泛型参数本身
+                && !t.IsInterface //接口类型
             );
 
         if (typeFilter != null)
             types = types.Where(typeFilter.Filter);
 
+        //MethodBase 为 MethodInfo 和 ConstructorInfo 的共同基类 
+        //可用于
+        //接受 MethodBase 返回 bool 的委托
+        //分是否有 methodFilter
         var methodFilter = filters?.MethodFilter;
-        Func<MethodBase, bool> GetMethodPredicate(Type type) => methodFilter == null
-            ? method => method.DeclaringType == type
-                    && !method.IsAbstract
-                    && !method.ContainsGenericParameters
-                    && jitFilter.ShouldJIT(method)
-                    && method.GetMethodBody() != null
-            : method => method.DeclaringType == type
-                    && !method.IsAbstract
-                    && !method.ContainsGenericParameters
-                    && jitFilter.ShouldJIT(method)
-                    && method.GetMethodBody() != null
-                    && methodFilter.Filter(method);
+
+        //Func<MethodBase, bool> GetMethodPredicate(Type type) => methodFilter == null
+        //    ? method => method.DeclaringType == type //确定在该Type下
+        //            && !method.IsAbstract //抽象方法
+        //            && !method.ContainsGenericParameters //排除含有未确定泛型参数的方法
+        //            && jitFilter.ShouldJIT(method) //遵守模组的方法级预 JIT 过滤规则
+        //            && method.GetMethodBody() != null //要求方法存在可读取的方法体
+        //    : method => method.DeclaringType == type
+        //            && !method.IsAbstract
+        //            && !method.ContainsGenericParameters
+        //            && jitFilter.ShouldJIT(method)
+        //            && method.GetMethodBody() != null
+        //            && methodFilter.Filter(method); //自定义的方法筛选规则
+
+        //这里简化写法
+        Func<MethodBase, bool> GetMethodPredicate(Type type) =>
+                method =>
+                method.DeclaringType == type //确定在该Type下
+                && !method.IsAbstract //抽象方法
+                && !method.ContainsGenericParameters //排除含有未确定泛型参数的方法
+                && jitFilter.ShouldJIT(method) //遵守模组的方法级预 JIT 过滤规则
+                && method.GetMethodBody() != null //要求方法存在可读取的方法体
+                && (methodFilter == null || methodFilter.Filter(method));
+
+
         var cursorFilter = filters?.CursorFilter;
+
         #endregion
 
+        //此为处理完后的types、methods和cursorFilter
         foreach (var type in types) 
         {
+            //同一名称方法出现次数
             Dictionary<string, int> methodCount = [];
             HashSet<string> usedMethodKey = [];
 
             var methods = type.GetMethods(BFALL)
-                .Concat<MethodBase>(type.GetConstructors(BFALL))
+                .Concat<MethodBase>(type.GetConstructors(BFALL)) //Concat 合并构造函数和普通函数 获取静态构造函数和实例构造函数
                 .Where(GetMethodPredicate(type)).ToArray();
 
             foreach (var method in methods) 
@@ -210,6 +249,7 @@ public static class TigerForceLocalizationHelper
 
             foreach (var method in methods) 
             {
+                //实际处理代码
                 var methodKey = GetMethodKey(type, method, methodCount[method.Name] > 1, localizationRoot, usedMethodKey.Contains);
                 usedMethodKey.Add(methodKey);
                 LocalizeMethod(method, methodKey, registerKey, useLocalizedText, cursorFilter);
@@ -217,13 +257,15 @@ public static class TigerForceLocalizationHelper
         }
     }
 
+    //重复同名方法本地化键处理
     private static string GetMethodKey(Type type, MethodBase method, bool duplicated, string root, Func<string, bool>? checkMethodKeyUsed = null) 
     {
         string methodKey;
 
+        //该方法检测有无初始键
         checkMethodKeyUsed ??= methodKey => Language.Exists($"{root}.{type.FullName}.{methodKey}.1.OldString");
 
-        var methodName = method.Name.Replace('.', '*'); // .ctor, .cctor, 以及它们里面的闭包方法
+        var methodName = method.Name.Replace('.', '*'); // .ctor, .cctor, 以及它们里面的闭包方法，处理避免 ForceLocalizations.Example..cctor的情况
 
         if (!duplicated) 
         {
@@ -231,6 +273,7 @@ public static class TigerForceLocalizationHelper
         }
         else 
         {
+            //重载方法加上类型以区分
             StringBuilder methodKeyBuilder = new();
             methodKeyBuilder.Append(methodName).Append('_').AppendJoin('_', method.GetParameters().Select(p => p.ParameterType.Name));
             methodKey = methodKeyBuilder.ToString();
@@ -238,13 +281,25 @@ public static class TigerForceLocalizationHelper
 
         string realMethodKey = methodKey;
 
-        for (int i = 2; checkMethodKeyUsed(realMethodKey); ++i) 
+        //完全同名则标序号区分
+        //bug:由于返回为完整汉化键
+        //后面checkMethodKeyUsed检测，可能始终返回false 导致无法一直增加标号
+
+        /*for (int i = 2; checkMethodKeyUsed(realMethodKey); ++i) 
+        *{
+        *    realMethodKey = $"{methodKey}_{i}";
+        *}
+        */
+
+        for (int i = 2; checkMethodKeyUsed($"{root}.{type.FullName}.{realMethodKey}"); i++) 
         {
             realMethodKey = $"{methodKey}_{i}";
         }
 
         methodKey = $"{root}.{type.FullName}.{realMethodKey}";
-        return methodKey;
+
+        return methodKey; 
+
     }
 
     /// <summary>
@@ -262,40 +317,57 @@ public static class TigerForceLocalizationHelper
     /// <inheritdoc cref="LocalizeAll(string, string, bool, string?, bool, LocalizeFilters?)"/>
     /// <param name="registerKey"></param>
     /// <param name="useLocalizedText"></param>
-    public static void LocalizeMethod(MethodBase method, string methodKey, bool registerKey = false, bool useLocalizedText = true, ILCursorFilter? cursorFilter = null) {
+    public static void LocalizeMethod(MethodBase method, string methodKey, bool registerKey = false, bool useLocalizedText = true, ILCursorFilter? cursorFilter = null) 
+    {
+        //该方法为先检测方法是否有字符串
+        //扫描后生成本地化字典，如最终字典为 oldValue - newKey
+        //最后IL分别实现注册绑定本地化键以及汉化
+
         #region 跳过不需要本地化的方法
-        if (!registerKey) {
-            if (!Language.Exists(methodKey + ".1.OldString")) {
+        
+        if (!registerKey) 
+        {
+            if (!Language.Exists(methodKey + ".1.OldString")) 
+            {
                 return;
             }
         }
-        else {
+        else 
+        {
+            //需要先扫秒注册时，DynamicMethodDefinition 获取方法 IL 上下文，检查是否存在任意 ldstr 指令
             ILContext il = new(new DynamicMethodDefinition(method).Definition);
-            if (!il.Instrs.Any(i => i.MatchLdstr(out _))) {
+            if (!il.Instrs.Any(i => i.MatchLdstr(out _))) 
+            {
                 return;
             }
         }
         #endregion
 
         #region 生成本地化字典
+        
         Dictionary<string, NewString> localizations = [];
         for (int i = 1; ; ++i) 
         {
+            //总配对键
             string stringPairKey = $"{methodKey}.{i}.";
+            //本地化条目编号必须连续，必须1、2、3 不能 1、3 否则直接断开
             string oldStringKey = stringPairKey + "OldString";
-
             if (!Language.Exists(oldStringKey)) 
             {
                 break;
             }
 
+            //获取处理后本地化键的值
             string oldString = GetTextValueModified(oldStringKey);
             string newStringKey = stringPairKey + "NewString";
+
+            //多个字符串
             if (Language.Exists(newStringKey + "_1")) 
             {
                 List<string> newStrings = [];
 
-                for (int j = 1; ; ++j) {
+                for (int j = 1; ; ++j) 
+                {
                     string newStringsKey = $"{newStringKey}_{j}";
                     if (!Language.Exists(newStringsKey)) 
                     {
@@ -303,6 +375,7 @@ public static class TigerForceLocalizationHelper
                     }
                     newStrings.Add(useLocalizedText ? newStringsKey : GetTextValueModified(newStringsKey));
                 }
+
                 if (newStrings.Count == 0) 
                 {
                     Debug.Assert(false, "应该存在 NewString_1 但却没有");
@@ -314,6 +387,7 @@ public static class TigerForceLocalizationHelper
             }
             else 
             {
+                //单个字符串
                 if (Language.Exists(newStringKey)) 
                 {
                     localizations.Add(oldString, new SingleNewString(newStringKey, useLocalizedText));
@@ -324,51 +398,204 @@ public static class TigerForceLocalizationHelper
 
         #region IL
         //IL实际处理
+        //MonoModHooks.Modify自动卸载，不需要关注手动释放
         MonoModHooks.Modify(method, il => 
         {
             ILCursor cursor = new(il);
             string? oldString = null;
 
-            while (cursor.TryGotoNext(i => i.MatchLdstr(out oldString))) 
+            //用于同方法重复字符串注册
+            Dictionary<string, int> stringOccurrences = [];
+
+            #region 原版
+            //不断查找字符串
+            //该版本默认使用MoveType.Before ，避免后续更新导致爆炸，保险加入
+            //while (cursor.TryGotoNext(MoveType.Before, i => i.MatchLdstr(out oldString)))
+            //{
+
+            //    if (oldString == null || cursor.Next == null)
+            //    {
+            //        continue;
+            //    }
+
+            //    var inLocalizations = localizations.TryGetValue(oldString, out var newStringClass);
+
+            //    //不在本地化缓存词典中 且 汉化模式下 跳过寻找下一个
+            //    if (!inLocalizations && !registerKey)
+            //        continue;
+
+            //    //筛选 ILcursor
+            //    if (cursorFilter != null && !cursorFilter.Filter(cursor))
+            //        continue;
+
+            //    //重复字符串次数
+            //    stringOccurrences[oldString] = stringOccurrences.GetValueOrDefault(oldString) + 1;
+
+            //    //注册模式下，不在本地化缓存词典中，则开始注册
+            //    //此处bug之一 ，同method下，相同字符串自动注册不使用 MultipleNewString
+            //    if (!inLocalizations)
+            //    {
+            //        if (stringOccurrences[oldString] > 1)
+            //        {
+            //            List<string> newStrings = [];
+
+            //            string stringPairKey = $"{methodKey}.{localizations.Count + 1}.";
+            //            string oldStringKey = stringPairKey + "OldString";
+            //            string newStringKey = stringPairKey + "NewString";
+            //            Language.GetOrRegister(oldStringKey, () => ToHjsonValue(oldString));
+            //            Language.GetOrRegister(newStringKey, () => ToHjsonValue(oldString));
+
+            //            for (int i = 1; i < stringOccurrences[oldString]; i++)
+            //            {
+            //                string newStringsKey = $"{newStringKey}_{i}";
+            //                //NewStrting_1、 NewStrting_2 依次注册相同值
+            //                Language.GetOrRegister(newStringsKey, () => ToHjsonValue(oldString));
+            //                newStrings.Add(useLocalizedText ? newStringsKey : GetTextValueModified(newStringsKey));
+            //            }
+
+            //            string? defaultNewString = !Language.Exists(newStringKey) ? null : useLocalizedText ? newStringKey : GetTextValueModified(newStringKey);
+            //            newStringClass = new MultipleNewString(newStrings, defaultNewString);
+            //            localizations.Add(oldString, newStringClass);
+            //        }
+            //        else
+            //        {
+            //            //向后增加配对键，达到注册效果
+            //            string stringPairKey = $"{methodKey}.{localizations.Count + 1}.";
+            //            string oldStringKey = stringPairKey + "OldString";
+            //            string newStringKey = stringPairKey + "NewString";
+            //            Language.GetOrRegister(oldStringKey, () => ToHjsonValue(oldString));
+            //            Language.GetOrRegister(newStringKey, () => ToHjsonValue(oldString));
+            //            newStringClass = new SingleNewString(newStringKey, useLocalizedText);
+            //            localizations.Add(oldString, newStringClass);
+            //        }
+
+            //    }
+
+            //    string newString = newStringClass!.GetValue();
+
+            //    //注册模式/汉化模式下，修改硬编码字符串代码
+            //    if (!useLocalizedText)
+            //    {
+
+            //        //直接修改模式，如果 HJSON 热重载后翻译发生变化，已替换的常量不会自动更新
+            //        cursor.Next.Operand = newString;
+            //    }
+            //    else
+            //    {
+            //        //使用本地化键模式，通过反射和原版本地化键热重载，实时更新
+            //        cursor.MoveAfterLabels();
+            //        cursor.EmitLdstr(newString);
+            //        cursor.EmitCall(GetTextValueModifiedMethodInfo);
+            //        cursor.Remove();
+            //    }
+            //}
+            #endregion
+
+            #region 修改版
+            //遍历查找所有字符串
+            for (int i = 0; i < il.Instrs.Count; i++)
             {
-                if (oldString == null || cursor.Next == null) 
+                if (!il.Instrs[i].MatchLdstr(out oldString))
+                    continue;
+
+                cursor.Index = i;
+
+                if (oldString == null || cursor.Next == null)
                 {
                     continue;
                 }
 
                 var inLocalizations = localizations.TryGetValue(oldString, out var newStringClass);
 
+                //不在本地化缓存词典中 且 汉化模式下 跳过寻找下一个
                 if (!inLocalizations && !registerKey)
                     continue;
 
+                //筛选 ILcursor
                 if (cursorFilter != null && !cursorFilter.Filter(cursor))
                     continue;
 
-                if (!inLocalizations) 
-                {
-                    string stringPairKey = $"{methodKey}.{localizations.Count + 1}.";
-                    string oldStringKey = stringPairKey + "OldString";
-                    string newStringKey = stringPairKey + "NewString";
-                    Language.GetOrRegister(oldStringKey, () => ToHjsonValue(oldString));
-                    Language.GetOrRegister(newStringKey, () => ToHjsonValue(oldString));
-                    newStringClass = new SingleNewString(newStringKey, useLocalizedText);
-                    localizations.Add(oldString, newStringClass);
-                }
+                stringOccurrences[oldString] = stringOccurrences.GetValueOrDefault(oldString) + 1;
+            }
 
-                string newString = newStringClass!.GetValue();
+            //实际注册操作
+            foreach (var oldStringCount in stringOccurrences)
+            {
+                string currentOldString = oldStringCount.Key;
+                int currentCount = oldStringCount.Value;
 
-                if (!useLocalizedText) 
+                var inLocalizations = localizations.TryGetValue(currentOldString, out var newStringClass);
+
+                if (inLocalizations)
+                    continue;
+
+                string stringPairKey = $"{methodKey}.{localizations.Count + 1}.";
+                string oldStringKey = stringPairKey + "OldString";
+                string newStringKey = stringPairKey + "NewString";
+
+                Language.GetOrRegister(oldStringKey, () => ToHjsonValue(currentOldString));
+                Language.GetOrRegister(newStringKey, () => ToHjsonValue(currentOldString));
+
+                if (currentCount > 1)
                 {
-                    cursor.Next.Operand = newString;
+                    List<string> newStrings = [];
+
+                    for (int i = 1; i < currentCount; i++)
+                    {
+                        string newStringsKey = $"{newStringKey}_{i}";
+                        //NewStrting_1、 NewStrting_2 依次注册相同值
+                        Language.GetOrRegister(newStringsKey, () => ToHjsonValue(currentOldString));
+                        newStrings.Add(useLocalizedText ? newStringsKey : GetTextValueModified(newStringsKey));
+                    }
+                    string defaultNewString = useLocalizedText ? newStringKey : GetTextValueModified(newStringKey);
+                    newStringClass = new MultipleNewString(newStrings, defaultNewString);
                 }
                 else 
                 {
+                    newStringClass = new SingleNewString(newStringKey, useLocalizedText);
+                }
+
+                localizations.Add(currentOldString, newStringClass);
+            }
+
+            //最后处理
+            cursor = new (il);
+            while (cursor.TryGotoNext(MoveType.Before, i => i.MatchLdstr(out oldString)))
+            {
+                if (oldString == null || cursor.Next == null)
+                {
+                    continue;
+                }
+
+                var inLocalizations = localizations.TryGetValue(oldString, out var newStringClass);
+
+                //不在本地化缓存词典中 且 汉化模式下 跳过寻找下一个
+                if (!inLocalizations && !registerKey)
+                    continue;
+
+                //二次不需筛选 ILcursor
+                //if (cursorFilter != null && !cursorFilter.Filter(cursor))
+                //    continue;
+
+                string newString = newStringClass!.GetValue();
+
+                //注册模式 / 汉化模式下，修改硬编码字符串代码
+                if (!useLocalizedText)
+                {
+                    //直接修改模式，如果 HJSON 热重载后翻译发生变化，已替换的常量不会自动更新
+                    cursor.Next.Operand = newString;
+                }
+                else
+                {
+                    //使用本地化键模式，通过反射和原版本地化键热重载，实时更新
                     cursor.MoveAfterLabels();
                     cursor.EmitLdstr(newString);
                     cursor.EmitCall(GetTextValueModifiedMethodInfo);
                     cursor.Remove();
                 }
             }
+            #endregion
+
         });
         #endregion
     }
@@ -393,19 +620,23 @@ public static class TigerForceLocalizationHelper
     }
 
     #region class NewString
-    private abstract class NewString {
+    private abstract class NewString 
+    {
         public abstract string GetValue();
     }
 
-    private class SingleNewString(string value) : NewString {
+    private class SingleNewString(string value) : NewString 
+    {
         public SingleNewString(string key, bool useLocalizedText) : this(useLocalizedText ? key : GetTextValueModified(key)) { }
         public override string GetValue() => value;
     }
 
-    private class MultipleNewString : NewString {
+    private class MultipleNewString : NewString 
+    {
         private List<string> Values { get; }
         private string DefaultValue { get; }
-        public MultipleNewString(List<string> values, string? defaultValue) {
+        public MultipleNewString(List<string> values, string? defaultValue) 
+        {
             Values = values;
             DefaultValue = defaultValue ?? Values[0];
         }
