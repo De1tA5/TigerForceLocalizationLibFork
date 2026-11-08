@@ -7,9 +7,15 @@
 	<PropertyGroup>
 	<!-- 关闭警告（我不想打 ! 了） -->
     <Nullable>annotations</Nullable>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
 	</PropertyGroup>
 
-	<!-- References -->
+	<!-- Temp contains standalone examples and generated verification sources. -->
+	<ItemGroup>
+		<Compile Remove="Temp\**\*.cs" />
+	</ItemGroup>
 
 </Project>

@@ -1,10 +1,7 @@
 using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using MonoMod.Utils;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Reflection;
 using System.Text;
 using Terraria.Localization;
@@ -15,20 +12,20 @@ using TypeFilter = TigerForceLocalizationLib.Filters.TypeFilter;
 
 namespace TigerForceLocalizationLib;
 
-//TODO - json外部配置文件控制，不再通过代码来直接调用API
+//TODO - hjson外部配置文件控制，不再通过代码来直接调用API
 
 /// <summary>
 /// 用以辅助本地化的一些方法
 /// </summary>
-public static class TigerForceLocalizationHelper 
+public static class TigerForceLocalizationHelper
 {
-    #region LocalizeAll, LocalizeMethod
+    #region LocalizeAll, LocalizeMethod , LocalizeField
 
     #region Filters
     /// <summary>
     /// 筛选需要本地化的内容
     /// </summary>
-    public class LocalizeFilters 
+    public class LocalizeFilters
     {
         /// <summary>
         /// 筛选一个类型
@@ -52,12 +49,14 @@ public static class TigerForceLocalizationHelper
     /// <br/>因为在 <see cref="LocalizationLoader"/> 中对于未开启所有弱引用的模组不会更新其 hjson
     /// <br/>如果将它设置为否那么会自动炸掉上面所说的逻辑
     /// </summary>
-    public static bool ForceAllWeakReferences {
+    public static bool ForceAllWeakReferences
+    {
         get => hookForNotAllWeakReferences == null;
-        set {
-            if (value) 
+        set
+        {
+            if (value)
             {
-                if (hookForNotAllWeakReferences == null) 
+                if (hookForNotAllWeakReferences == null)
                 {
                     return;
                 }
@@ -66,7 +65,7 @@ public static class TigerForceLocalizationHelper
                 return;
             }
 
-            if (hookForNotAllWeakReferences != null) 
+            if (hookForNotAllWeakReferences != null)
             {
                 return;
             }
@@ -79,12 +78,12 @@ public static class TigerForceLocalizationHelper
 
     //某个模组没有加载时，不再直接退出整个本地化文件更新方法
     //而是跳过这个模组，继续处理其他模组
-    private static void IL_NotAllWeakReferences(ILContext il) 
+    private static void IL_NotAllWeakReferences(ILContext il)
     {
         ILCursor cursor = new(il);
         if (!cursor.TryGotoNext(i => i.MatchLdloc(13), // otherMod
             i => i.MatchBrtrue(out _),
-            i => i.MatchLeave(out _))) 
+            i => i.MatchLeave(out _)))
         {
             //匹配对应代码段落为 if (otherMod == null) return;
             return;
@@ -139,24 +138,24 @@ public static class TigerForceLocalizationHelper
     /// <param name="filters">筛选需要本地化的内容</param>
     public static void LocalizeAll(string selfModName, string modName, bool registerKey = false, string? localizationRoot = null, bool useLocalizedText = true, LocalizeFilters? filters = null)
     {
-        if (!ModLoader.TryGetMod(modName, out Mod mod)) 
+        if (!ModLoader.TryGetMod(modName, out Mod mod))
         {
             throw new Exception($"未找到模组\"{modName}\"!");
         }
 
-        if (registerKey && ForceAllWeakReferences && mod.TranslationForMods != null) 
+        if (registerKey && ForceAllWeakReferences && mod.TranslationForMods != null)
         {
             List<string> missingWeakReferences = [];
 
-            foreach (var translateMod in mod.TranslationForMods) 
+            foreach (var translateMod in mod.TranslationForMods)
             {
-                if (!ModLoader.HasMod(translateMod)) 
+                if (!ModLoader.HasMod(translateMod))
                 {
                     missingWeakReferences.Add(translateMod);
                 }
             }
 
-            if (missingWeakReferences.Count != 0) 
+            if (missingWeakReferences.Count != 0)
             {
                 throw new Exception($"""
                     以下弱引用没有开启, 无法进行汉化:
@@ -165,7 +164,7 @@ public static class TigerForceLocalizationHelper
                     """);
             }
         }
-        //
+
         var jitFilter = mod.PreJITFilter;
 
         //本地化文件名称
@@ -176,7 +175,7 @@ public static class TigerForceLocalizationHelper
         var typeFilter = filters?.TypeFilter;
 
         //递归 检查该模组Type及其所有外层嵌套声明类型是否允许预 JIT 编译的局部函数
-        bool ShouldJITRecursive(Type type) => 
+        bool ShouldJITRecursive(Type type) =>
             jitFilter.ShouldJIT(type) && (type.DeclaringType is null || ShouldJITRecursive(type.DeclaringType));
 
         //程序集获取，包括可加载类型
@@ -195,7 +194,7 @@ public static class TigerForceLocalizationHelper
             types = types.Where(typeFilter.Filter);
 
         //MethodBase 为 MethodInfo 和 ConstructorInfo 的共同基类 
-        //可用于
+        //检查所有合适的method
         //接受 MethodBase 返回 bool 的委托
         //分是否有 methodFilter
         var methodFilter = filters?.MethodFilter;
@@ -229,55 +228,81 @@ public static class TigerForceLocalizationHelper
         #endregion
 
         //此为处理完后的types、methods和cursorFilter
-        foreach (var type in types) 
+        foreach (var type in types)
         {
             //同一名称方法出现次数
             Dictionary<string, int> methodCount = [];
             HashSet<string> usedMethodKey = [];
 
+            //Dictionary<string, int> fieldCount = [];
+            //HashSet<string> usedFiedlKey = [];
+
+            //包含静态
             var methods = type.GetMethods(BFALL)
                 .Concat<MethodBase>(type.GetConstructors(BFALL)) //Concat 合并构造函数和普通函数 获取静态构造函数和实例构造函数
                 .Where(GetMethodPredicate(type)).ToArray();
 
-            foreach (var method in methods) 
+
+            foreach (var method in methods)
             {
-                if (!methodCount.TryAdd(method.Name, 1)) 
+                if (!methodCount.TryAdd(method.Name, 1))
                 {
                     methodCount[method.Name] += 1;
                 }
             }
 
-            foreach (var method in methods) 
+            foreach (var method in methods)
             {
                 //实际处理代码
                 var methodKey = GetMethodKey(type, method, methodCount[method.Name] > 1, localizationRoot, usedMethodKey.Contains);
                 usedMethodKey.Add(methodKey);
                 LocalizeMethod(method, methodKey, registerKey, useLocalizedText, cursorFilter);
             }
+
+            //foreach (var field in fields) 
+            //{
+            //    if (!fieldCount.TryAdd(field.Name, 1))
+            //    {
+            //        methodCount[field.Name] += 1;
+            //    }
+            //}
+
         }
     }
 
     //重复同名方法本地化键处理
-    private static string GetMethodKey(Type type, MethodBase method, bool duplicated, string root, Func<string, bool>? checkMethodKeyUsed = null) 
+    private static string GetMethodKey(Type type, MethodBase method, bool duplicated, string root, Func<string, bool>? checkMethodKeyUsed = null)
     {
         string methodKey;
 
         //该方法检测有无初始键
         checkMethodKeyUsed ??= methodKey => Language.Exists($"{root}.{type.FullName}.{methodKey}.1.OldString");
 
-        var methodName = method.Name.Replace('.', '*'); // .ctor, .cctor, 以及它们里面的闭包方法，处理避免 ForceLocalizations.Example..cctor的情况
+        // .ctor, .cctor, 以及它们里面的闭包方法，处理避免 ForceLocalizations.Example..cctor的情况
+        //关于字段，均存储在 构造函数（.ctor） 和 静态构造函数（.cctor）
+        var methodName = method.Name.Replace('.', '*'); 
 
-        if (!duplicated) 
+        if (!duplicated)
         {
             methodKey = methodName;
         }
-        else 
+        else
         {
             //重载方法加上类型以区分
             StringBuilder methodKeyBuilder = new();
             methodKeyBuilder.Append(methodName).Append('_').AppendJoin('_', method.GetParameters().Select(p => p.ParameterType.Name));
             methodKey = methodKeyBuilder.ToString();
         }
+
+        //额外对构造以及静态构造函数内字段进行区分
+        //最终为 *ctor.String.1 
+        //if (methodName.Contains('*')) 
+        //{
+        //    StringBuilder constructorKeyBuilder = new();
+        //    constructorKeyBuilder.Append(methodName).Append('.').AppendJoin('.', method.GetParameters().Select(p => p.ParameterType.Name));
+        //    methodKey = constructorKeyBuilder.ToString();
+        //}
+
 
         string realMethodKey = methodKey;
 
@@ -291,14 +316,14 @@ public static class TigerForceLocalizationHelper
         *}
         */
 
-        for (int i = 2; checkMethodKeyUsed($"{root}.{type.FullName}.{realMethodKey}"); i++) 
+        for (int i = 2; checkMethodKeyUsed($"{root}.{type.FullName}.{realMethodKey}"); i++)
         {
             realMethodKey = $"{methodKey}_{i}";
         }
 
         methodKey = $"{root}.{type.FullName}.{realMethodKey}";
 
-        return methodKey; 
+        return methodKey;
 
     }
 
@@ -317,26 +342,26 @@ public static class TigerForceLocalizationHelper
     /// <inheritdoc cref="LocalizeAll(string, string, bool, string?, bool, LocalizeFilters?)"/>
     /// <param name="registerKey"></param>
     /// <param name="useLocalizedText"></param>
-    public static void LocalizeMethod(MethodBase method, string methodKey, bool registerKey = false, bool useLocalizedText = true, ILCursorFilter? cursorFilter = null) 
+    public static void LocalizeMethod(MethodBase method, string methodKey, bool registerKey = false, bool useLocalizedText = true, ILCursorFilter? cursorFilter = null)
     {
         //该方法为先检测方法是否有字符串
         //扫描后生成本地化字典，如最终字典为 oldValue - newKey
         //最后IL分别实现注册绑定本地化键以及汉化
 
         #region 跳过不需要本地化的方法
-        
-        if (!registerKey) 
+
+        if (!registerKey)
         {
-            if (!Language.Exists(methodKey + ".1.OldString")) 
+            if (!Language.Exists(methodKey + ".1.OldString"))
             {
                 return;
             }
         }
-        else 
+        else
         {
             //需要先扫秒注册时，DynamicMethodDefinition 获取方法 IL 上下文，检查是否存在任意 ldstr 指令
             ILContext il = new(new DynamicMethodDefinition(method).Definition);
-            if (!il.Instrs.Any(i => i.MatchLdstr(out _))) 
+            if (!il.Instrs.Any(i => i.MatchLdstr(out _)))
             {
                 return;
             }
@@ -344,15 +369,15 @@ public static class TigerForceLocalizationHelper
         #endregion
 
         #region 生成本地化字典
-        
+
         Dictionary<string, NewString> localizations = [];
-        for (int i = 1; ; ++i) 
+        for (int i = 1; ; ++i)
         {
             //总配对键
             string stringPairKey = $"{methodKey}.{i}.";
             //本地化条目编号必须连续，必须1、2、3 不能 1、3 否则直接断开
             string oldStringKey = stringPairKey + "OldString";
-            if (!Language.Exists(oldStringKey)) 
+            if (!Language.Exists(oldStringKey))
             {
                 break;
             }
@@ -362,21 +387,21 @@ public static class TigerForceLocalizationHelper
             string newStringKey = stringPairKey + "NewString";
 
             //多个字符串
-            if (Language.Exists(newStringKey + "_1")) 
+            if (Language.Exists(newStringKey + "_1"))
             {
                 List<string> newStrings = [];
 
-                for (int j = 1; ; ++j) 
+                for (int j = 1; ; ++j)
                 {
                     string newStringsKey = $"{newStringKey}_{j}";
-                    if (!Language.Exists(newStringsKey)) 
+                    if (!Language.Exists(newStringsKey))
                     {
                         break;
                     }
                     newStrings.Add(useLocalizedText ? newStringsKey : GetTextValueModified(newStringsKey));
                 }
 
-                if (newStrings.Count == 0) 
+                if (newStrings.Count == 0)
                 {
                     Debug.Assert(false, "应该存在 NewString_1 但却没有");
                     continue;
@@ -385,10 +410,10 @@ public static class TigerForceLocalizationHelper
                 string? defaultNewString = !Language.Exists(newStringKey) ? null : useLocalizedText ? newStringKey : GetTextValueModified(newStringKey);
                 localizations.Add(oldString, new MultipleNewString(newStrings, defaultNewString));
             }
-            else 
+            else
             {
                 //单个字符串
-                if (Language.Exists(newStringKey)) 
+                if (Language.Exists(newStringKey))
                 {
                     localizations.Add(oldString, new SingleNewString(newStringKey, useLocalizedText));
                 }
@@ -399,7 +424,7 @@ public static class TigerForceLocalizationHelper
         #region IL
         //IL实际处理
         //MonoModHooks.Modify自动卸载，不需要关注手动释放
-        MonoModHooks.Modify(method, il => 
+        MonoModHooks.Modify(method, il =>
         {
             ILCursor cursor = new(il);
             string? oldString = null;
@@ -519,8 +544,8 @@ public static class TigerForceLocalizationHelper
             }
 
             //实际注册操作
-            if (registerKey) 
-            { 
+            if (registerKey)
+            {
                 foreach (var oldStringCount in stringOccurrences)
                 {
                     string currentOldString = oldStringCount.Key;
@@ -552,7 +577,7 @@ public static class TigerForceLocalizationHelper
                         string defaultNewString = useLocalizedText ? newStringKey : GetTextValueModified(newStringKey);
                         newStringClass = new MultipleNewString(newStrings, defaultNewString);
                     }
-                    else 
+                    else
                     {
                         newStringClass = new SingleNewString(newStringKey, useLocalizedText);
                     }
@@ -562,7 +587,7 @@ public static class TigerForceLocalizationHelper
             }
 
             //实际修改对应字符串IL处理
-            cursor = new (il);
+            cursor = new(il);
             while (cursor.TryGotoNext(MoveType.Before, i => i.MatchLdstr(out oldString)))
             {
                 if (oldString == null || cursor.Next == null)
@@ -613,7 +638,7 @@ public static class TigerForceLocalizationHelper
     /// <param name="registerKey"></param>
     /// <param name="useLocalizedText"></param>
     /// <exception cref="NullReferenceException"></exception>
-    public static void LocalizeMethodByRoot(MethodBase method, string localizationRoot, bool registerKey = false, bool useLocalizedText = true) 
+    public static void LocalizeMethodByRoot(MethodBase method, string localizationRoot, bool registerKey = false, bool useLocalizedText = true)
     {
         var type = method.DeclaringType ?? throw new NullReferenceException("method should have declaring type");
         bool duplicated = type.GetMethods(BFALL)
@@ -623,22 +648,22 @@ public static class TigerForceLocalizationHelper
     }
 
     #region class NewString
-    private abstract class NewString 
+    private abstract class NewString
     {
         public abstract string GetValue();
     }
 
-    private class SingleNewString(string value) : NewString 
+    private class SingleNewString(string value) : NewString
     {
         public SingleNewString(string key, bool useLocalizedText) : this(useLocalizedText ? key : GetTextValueModified(key)) { }
         public override string GetValue() => value;
     }
 
-    private class MultipleNewString : NewString 
+    private class MultipleNewString : NewString
     {
         private List<string> Values { get; }
         private string DefaultValue { get; }
-        public MultipleNewString(List<string> values, string? defaultValue) 
+        public MultipleNewString(List<string> values, string? defaultValue)
         {
             Values = values;
             DefaultValue = defaultValue ?? Values[0];
@@ -661,13 +686,16 @@ public static class TigerForceLocalizationHelper
     /// </summary>
     /// <param name="progressTextFormat">进度文字的格式, 显示在进度条上方的大字, 其中 {0} 表示模组名</param>
     /// <param name="subProgressTextFormat">副进度文字的格式, 显示在进度条下方的小字, 其中 {0} 表示本地化键名</param>
-    public static void ShowLocalizationRegisterProgress(string progressTextFormat = "更新本地化文件: {0}", string subProgressTextFormat = "注册键: {0}") {
+    public static void ShowLocalizationRegisterProgress(string progressTextFormat = "更新本地化文件: {0}", string subProgressTextFormat = "注册键: {0}")
+    {
         if (finishedLocalizeRegister)
             return;
-        if (showLocalizationRegisterProgressHooks == null) {
+        if (showLocalizationRegisterProgressHooks == null)
+        {
             showLocalizationRegisterProgressHooks = new(progressTextFormat, subProgressTextFormat);
         }
-        else {
+        else
+        {
             showLocalizationRegisterProgressHooks.ProgressTextFormat = progressTextFormat;
             showLocalizationRegisterProgressHooks.SubProgressTextFormat = subProgressTextFormat;
         }
@@ -676,7 +704,8 @@ public static class TigerForceLocalizationHelper
     private static bool finishedLocalizeRegister;
     private static ShowLocalizationRegisterProgressHooksClass? showLocalizationRegisterProgressHooks;
 
-    private class ShowLocalizationRegisterProgressHooksClass : IDisposable {
+    private class ShowLocalizationRegisterProgressHooksClass : IDisposable
+    {
         private readonly Hook updateLocalizationFilesForModHook;
         private readonly ILHook updateLocalizationFilesForModILHook;
         private readonly Hook addEntryToHJSONHook;
@@ -685,7 +714,8 @@ public static class TigerForceLocalizationHelper
         public string ProgressTextFormat { get; set; }
         public string SubProgressTextFormat { get; set; }
 
-        public ShowLocalizationRegisterProgressHooksClass(string progressTextFormat, string subProgressTextFormat) {
+        public ShowLocalizationRegisterProgressHooksClass(string progressTextFormat, string subProgressTextFormat)
+        {
             ProgressTextFormat = progressTextFormat;
             SubProgressTextFormat = subProgressTextFormat;
             updateLocalizationFilesForModHook = new(TMLReflections.LocalizationLoader.UpdateLocalizationFilesForModMethod, On_LocalizationLoader_UpdateLocalizationFilesForMod);
@@ -700,7 +730,7 @@ public static class TigerForceLocalizationHelper
 
         private delegate void UpdateLocalizationFilesForModDelegate(Mod mod, string? outputPath, GameCulture? specificCulture);
 
-        private void On_LocalizationLoader_UpdateLocalizationFilesForMod(UpdateLocalizationFilesForModDelegate orig, Mod mod, string? outputPath, GameCulture? specificCulture) 
+        private void On_LocalizationLoader_UpdateLocalizationFilesForMod(UpdateLocalizationFilesForModDelegate orig, Mod mod, string? outputPath, GameCulture? specificCulture)
         {
             localizingMod = mod;
             TMLReflections.UILoadMods.SetProgressText(string.Format(ProgressTextFormat, mod.DisplayNameClean));
@@ -710,18 +740,18 @@ public static class TigerForceLocalizationHelper
             TMLReflections.UILoadMods.SetProgress(0);
         }
 
-        private void IL_LocalizationLoader_UpdateLocalizationFilesForMod(ILContext il) 
+        private void IL_LocalizationLoader_UpdateLocalizationFilesForMod(ILContext il)
         {
             ILCursor cursor = new(il);
             cursor.GotoNext(MoveType.After, i => i.MatchStloc(9)); // baseLocalizationKeys
             cursor.EmitLdloc(9);
-            cursor.EmitDelegate((HashSet<string> baseLocalizationKeys) => 
+            cursor.EmitDelegate((HashSet<string> baseLocalizationKeys) =>
             {
                 if (localizingMod == null)
                     return;
 
-                totalLocalizations = TMLReflections.LanguageManager.LocalizedText.Values.Count(t => 
-                    t.Key.StartsWith($"Mods.{localizingMod.Name}.") && 
+                totalLocalizations = TMLReflections.LanguageManager.LocalizedText.Values.Count(t =>
+                    t.Key.StartsWith($"Mods.{localizingMod.Name}.") &&
                     !baseLocalizationKeys.Contains(t.Key));
 
                 if (totalLocalizations <= 0)
@@ -733,23 +763,26 @@ public static class TigerForceLocalizationHelper
 
         private delegate void AddEntryToHJSONDelegate(LocalizationLoader.LocalizationFile file, string key, string value, string comment);
 
-        private void On_LocalizationLoader_AddEntryToHJSON(AddEntryToHJSONDelegate orig, LocalizationLoader.LocalizationFile file, string key, string value, string comment) 
+        private void On_LocalizationLoader_AddEntryToHJSON(AddEntryToHJSONDelegate orig, LocalizationLoader.LocalizationFile file, string key, string value, string comment)
         {
-            if (localizingMod != null) {
+            if (localizingMod != null)
+            {
                 TMLReflections.UILoadMods.SetProgress((float)currentLocalzationCount++ / totalLocalizations);
                 TMLReflections.UILoadMods.SetSubProgressText(string.Format(SubProgressTextFormat, key));
             }
             orig(file, key, value, comment);
         }
 
-        private void On_LocalizationLoader_UpdateLocalizationFiles(Action orig) {
+        private void On_LocalizationLoader_UpdateLocalizationFiles(Action orig)
+        {
             orig();
             finishedLocalizeRegister = true;
             Dispose();
             showLocalizationRegisterProgressHooks = null;
         }
 
-        public void Dispose() {
+        public void Dispose()
+        {
             updateLocalizationFilesForModHook?.Dispose();
             updateLocalizationFilesForModILHook?.Dispose();
             addEntryToHJSONHook?.Dispose();
@@ -764,28 +797,28 @@ public static class TigerForceLocalizationHelper
 
     // 由于 HjsonValue.Parse 会将值中开头的空字符去除, 所以需要一些特殊处理
     // 具体做法是如果开头是空格, '\t', 或单引号, 就额外在字符串开头加一个单引号
-    private static string ToHjsonValue(string value) 
+    private static string ToHjsonValue(string value)
     {
-        if (value.StartsWith(' ') || value.StartsWith('\t')) 
+        if (value.StartsWith(' ') || value.StartsWith('\t'))
         {
             return '\'' + value;
         }
 
-        if (value.StartsWith('\'') && value.Length >= 2 && value[1] is ' ' or '\t' or '\'') 
+        if (value.StartsWith('\'') && value.Length >= 2 && value[1] is ' ' or '\t' or '\'')
         {
             return '\'' + value;
         }
 
         return value;
     }
-    private static string FromHjsonValue(string hjsonValue) 
+    private static string FromHjsonValue(string hjsonValue)
     {
-        if (!hjsonValue.StartsWith('\'') || hjsonValue.Length <= 1) 
+        if (!hjsonValue.StartsWith('\'') || hjsonValue.Length <= 1)
         {
             return hjsonValue;
         }
 
-        if (hjsonValue[1] is ' ' or '\t' or '\'') 
+        if (hjsonValue[1] is ' ' or '\t' or '\'')
         {
             return hjsonValue[1..];
         }
