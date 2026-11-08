@@ -519,46 +519,49 @@ public static class TigerForceLocalizationHelper
             }
 
             //实际注册操作
-            foreach (var oldStringCount in stringOccurrences)
-            {
-                string currentOldString = oldStringCount.Key;
-                int currentCount = oldStringCount.Value;
-
-                var inLocalizations = localizations.TryGetValue(currentOldString, out var newStringClass);
-
-                if (inLocalizations)
-                    continue;
-
-                string stringPairKey = $"{methodKey}.{localizations.Count + 1}.";
-                string oldStringKey = stringPairKey + "OldString";
-                string newStringKey = stringPairKey + "NewString";
-
-                Language.GetOrRegister(oldStringKey, () => ToHjsonValue(currentOldString));
-                Language.GetOrRegister(newStringKey, () => ToHjsonValue(currentOldString));
-
-                if (currentCount > 1)
+            if (registerKey) 
+            { 
+                foreach (var oldStringCount in stringOccurrences)
                 {
-                    List<string> newStrings = [];
+                    string currentOldString = oldStringCount.Key;
+                    int currentCount = oldStringCount.Value;
 
-                    for (int i = 1; i < currentCount; i++)
+                    var inLocalizations = localizations.TryGetValue(currentOldString, out var newStringClass);
+
+                    if (inLocalizations)
+                        continue;
+
+                    string stringPairKey = $"{methodKey}.{localizations.Count + 1}.";
+                    string oldStringKey = stringPairKey + "OldString";
+                    string newStringKey = stringPairKey + "NewString";
+
+                    Language.GetOrRegister(oldStringKey, () => ToHjsonValue(currentOldString));
+                    Language.GetOrRegister(newStringKey, () => ToHjsonValue(currentOldString));
+
+                    if (currentCount > 1)
                     {
-                        string newStringsKey = $"{newStringKey}_{i}";
-                        //NewStrting_1、 NewStrting_2 依次注册相同值
-                        Language.GetOrRegister(newStringsKey, () => ToHjsonValue(currentOldString));
-                        newStrings.Add(useLocalizedText ? newStringsKey : GetTextValueModified(newStringsKey));
-                    }
-                    string defaultNewString = useLocalizedText ? newStringKey : GetTextValueModified(newStringKey);
-                    newStringClass = new MultipleNewString(newStrings, defaultNewString);
-                }
-                else 
-                {
-                    newStringClass = new SingleNewString(newStringKey, useLocalizedText);
-                }
+                        List<string> newStrings = [];
 
-                localizations.Add(currentOldString, newStringClass);
+                        for (int i = 1; i < currentCount; i++)
+                        {
+                            string newStringsKey = $"{newStringKey}_{i}";
+                            //NewStrting_1、 NewStrting_2 依次注册相同值
+                            Language.GetOrRegister(newStringsKey, () => ToHjsonValue(currentOldString));
+                            newStrings.Add(useLocalizedText ? newStringsKey : GetTextValueModified(newStringsKey));
+                        }
+                        string defaultNewString = useLocalizedText ? newStringKey : GetTextValueModified(newStringKey);
+                        newStringClass = new MultipleNewString(newStrings, defaultNewString);
+                    }
+                    else 
+                    {
+                        newStringClass = new SingleNewString(newStringKey, useLocalizedText);
+                    }
+
+                    localizations.Add(currentOldString, newStringClass);
+                }
             }
 
-            //最后处理
+            //实际修改对应字符串IL处理
             cursor = new (il);
             while (cursor.TryGotoNext(MoveType.Before, i => i.MatchLdstr(out oldString)))
             {
@@ -579,7 +582,7 @@ public static class TigerForceLocalizationHelper
 
                 string newString = newStringClass!.GetValue();
 
-                //注册模式 / 汉化模式下，修改硬编码字符串代码
+                //注册模式 / 汉化模式下，修改硬编码字符串
                 if (!useLocalizedText)
                 {
                     //直接修改模式，如果 HJSON 热重载后翻译发生变化，已替换的常量不会自动更新
