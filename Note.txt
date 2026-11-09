@@ -1,3 +1,4 @@
+[].ctor 和 .cctor 字段分类，实现.*ctor.FieldName.1.OldString
 []json配置文件控制硬编码修复，可考虑Attribute控制
 []同一本地化文件优先级调控覆盖
 []新文档
